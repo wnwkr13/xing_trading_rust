@@ -52,6 +52,20 @@ pub async fn fetch_stock_list(
         .json(&body)
         .send()
         .await?;
+    // HTTP 상태코드별 에러 핸들링 추가
+    let status = resp.status();
+    if !status.is_success() {
+        let err_msg = match status.as_u16() {
+            400 => "잘못된 요청입니다 (BAD_REQUEST)",
+            401 => "인증이 필요하거나 토큰이 잘못되었습니다 (UNAUTHORIZED)",
+            404 => "API 엔드포인트를 찾을 수 없습니다 (NOT_FOUND)",
+            405 => "허용되지 않은 메서드입니다 (METHOD_NOT_ALLOWED)",
+            500 => "서버 내부 오류입니다 (INTERNAL_SERVER_ERROR)",
+            503 => "서비스를 사용할 수 없습니다 (SERVICE_UNAVAILABLE)",
+            _ => "알 수 없는 HTTP 에러입니다",
+        };
+        return Err(format!("HTTP {}: {}", status.as_u16(), err_msg).into());
+    }
     let text = resp.text().await?;
     if debug_print {
         println!("[DEBUG] API raw response: {}", text);
@@ -204,6 +218,25 @@ mod tests {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_stock_list_http_error() {
+        let config = AppConfig::from_env();
+        let invalid_token = "invalid_token";
+        let tr_cd = "t9945";
+        let result = fetch_stock_list(&config, invalid_token, tr_cd, "1", None, None, false).await;
+        match result {
+            Ok(_) => panic!("에러가 발생해야 합니다."),
+            Err(e) => {
+                let msg = format!("{}", e);
+                assert!(
+                    msg.contains("UNAUTHORIZED"),
+                    "401 에러 메시지에 UNAUTHORIZED가 포함되어야 합니다. 실제: {}",
+                    msg
+                );
             }
         }
     }
